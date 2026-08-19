@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# A new push to the same branch cancels whatever CI run is already in flight for it - no point
+# burning minutes finishing a build for a commit that's already been superseded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  build-test:
+    uses: leon-lourenco/ci-templates/.github/workflows/maven-build-test.yml@master
+
+  codeql:
+    uses: leon-lourenco/ci-templates/.github/workflows/codeql-java.yml@master
+    with:
+      build-tool: maven

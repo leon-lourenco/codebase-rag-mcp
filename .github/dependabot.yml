@@ -1,0 +1,14 @@
+version: 2
+updates:
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Keeps the actions this repo's own workflow pins current. The reusable workflows living in
+  # ci-templates have their own Dependabot config over there - this only covers what's pinned
+  # directly in this repo's own workflow file.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
