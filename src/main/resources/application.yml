@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: codebase-rag-mcp
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/coderag
+    username: coderag
+    password: coderag
+
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      embedding:
+        options:
+          model: nomic-embed-text
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        dimensions: 768
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:unused-in-index-mode}
+    mcp:
+      server:
+        name: codebase-rag-mcp
+        version: 0.0.1
+
+logging:
+  level:
+    com.coderag: info
