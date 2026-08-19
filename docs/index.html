@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>codebase-rag-mcp</title>
+<meta name="description" content="Engineering case study: a repo-agnostic RAG server over the Model Context Protocol — real AST-based chunking, a retrieval-only tool design, and a real stdio protocol bug caught and fixed." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='18' fill='%230e8f86'/%3E%3Ctext x='50' y='66' font-size='46' font-family='Georgia,serif' fill='%23eef2e9' text-anchor='middle'%3E%7B%7D%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #eef2e9;
+    --paper-raised: #f6f8f3;
+    --rule: #c7d6bf;
+    --rule-strong: #9db096;
+    --ink: #16241c;
+    --ink-secondary: #4b5c4f;
+    --ink-muted: #75847a;
+    --accent: #0e8f86;
+    --accent-ink: #eef2e9;
+    --warn: #a5660a;
+    --warn-bg: #f2e3c8;
+    --bad: #b3432f;
+    --bad-bg: #f4ded9;
+    --shadow: rgba(22, 36, 28, 0.08);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #10190f;
+      --paper-raised: #17221a;
+      --rule: #2a3a2c;
+      --rule-strong: #3c4f3e;
+      --ink: #e9efe4;
+      --ink-secondary: #a8b6a2;
+      --ink-muted: #7d8c7d;
+      --accent: #35d2c3;
+      --accent-ink: #0a1512;
+      --warn: #e2a83f;
+      --warn-bg: #33290f;
+      --bad: #e2735f;
+      --bad-bg: #3a2019;
+      --shadow: rgba(0, 0, 0, 0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #10190f;
+    --paper-raised: #17221a;
+    --rule: #2a3a2c;
+    --rule-strong: #3c4f3e;
+    --ink: #e9efe4;
+    --ink-secondary: #a8b6a2;
+    --ink-muted: #7d8c7d;
+    --accent: #35d2c3;
+    --accent-ink: #0a1512;
+    --warn: #e2a83f;
+    --warn-bg: #33290f;
+    --bad: #e2735f;
+    --bad-bg: #3a2019;
+    --shadow: rgba(0, 0, 0, 0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Public Sans", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+  }
+
+  h1, h2, h3 {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600;
+    line-height: 1.12;
+    text-wrap: balance;
+    margin: 0;
+    color: var(--ink);
+  }
+
+  a { color: var(--accent); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+  code, .mono, .num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+  .prose { max-width: 700px; }
+
+  /* ---------- masthead ---------- */
+  .masthead { border-bottom: 1.5px solid var(--rule-strong); padding: 22px 0; }
+  .masthead .wrap { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand-mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 6px;
+    background: var(--accent); color: var(--accent-ink);
+    font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px;
+    flex-shrink: 0;
+  }
+  .brand-name { font-family: "IBM Plex Mono"; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-secondary); }
+  .masthead nav { display: flex; gap: 24px; font-family: "IBM Plex Mono"; font-size: 13px; }
+  .masthead nav a { color: var(--ink-secondary); text-decoration: none; }
+  .masthead nav a:hover { color: var(--accent); }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 76px 0 64px; border-bottom: 1.5px solid var(--rule); }
+  .eyebrow {
+    font-family: "IBM Plex Mono"; font-size: 12.5px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 18px;
+  }
+  .hero h1 { font-size: clamp(34px, 5.2vw, 54px); max-width: 17ch; }
+  .hero .dek { max-width: 58ch; margin: 22px 0 0; color: var(--ink-secondary); font-size: 19px; }
+  .cta-row { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
+  .btn {
+    font-family: "IBM Plex Mono"; font-size: 13.5px; letter-spacing: 0.02em;
+    padding: 12px 20px; border-radius: 3px; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+    border: 1.5px solid transparent; transition: transform 0.12s ease, background 0.12s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary { background: var(--ink); color: var(--paper); }
+  .btn-secondary { border-color: var(--rule-strong); color: var(--ink); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- sections ---------- */
+  section { padding: 64px 0; border-bottom: 1.5px solid var(--rule); }
+  section:last-of-type { border-bottom: none; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; margin-bottom: 34px; flex-wrap: wrap; }
+  .section-head h2 { font-size: clamp(24px, 3.4vw, 32px); }
+  .section-tag { font-family: "IBM Plex Mono"; font-size: 12.5px; color: var(--ink-muted); letter-spacing: 0.04em; }
+
+  /* ---------- proof / before-after ---------- */
+  .proof-intro { color: var(--ink-secondary); max-width: 62ch; margin: 0 0 36px; }
+  .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+  .panel { background: var(--paper-raised); border: 1.5px solid var(--rule); border-radius: 6px; overflow: hidden; box-shadow: 0 6px 18px var(--shadow); }
+  .panel-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; font-family: "IBM Plex Mono"; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; border-bottom: 1px solid var(--rule); }
+  .panel-head.bad { color: var(--bad); background: var(--bad-bg); }
+  .panel-head.good { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--paper-raised)); }
+  .panel pre { margin: 0; padding: 16px; font-family: "IBM Plex Mono"; font-size: 12px; line-height: 1.6; overflow-x: auto; white-space: pre; color: var(--ink-secondary); }
+  .panel pre .flag { color: var(--bad); }
+  .panel pre .ok { color: var(--accent); }
+
+  .evidence-table { width: 100%; border-collapse: collapse; margin-top: 30px; font-size: 15px; }
+  .evidence-table th { text-align: left; font-family: "IBM Plex Mono"; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-muted); font-weight: 500; padding: 0 0 10px; border-bottom: 1.5px solid var(--rule-strong); }
+  .evidence-table td { padding: 12px 0; border-bottom: 1px solid var(--rule); }
+  .evidence-table td:not(:first-child), .evidence-table th:not(:first-child) { text-align: right; font-family: "IBM Plex Mono"; }
+  .evidence-table tr:last-child td { border-bottom: none; }
+  .evidence-table tr.total td { font-weight: 600; border-top: 1.5px solid var(--rule-strong); }
+
+  .cross-check {
+    margin-top: 26px; padding: 16px 18px; background: var(--warn-bg); border-left: 3px solid var(--warn);
+    border-radius: 0 4px 4px 0; font-size: 14.5px; color: var(--ink);
+  }
+  .cross-check .mono { color: var(--ink-secondary); }
+
+  /* ---------- architecture ---------- */
+  .diagram-wrap { overflow-x: auto; }
+  .diagram-wrap svg { min-width: 760px; width: 100%; height: auto; display: block; }
+  .arch-box { fill: var(--paper-raised); stroke: var(--rule-strong); stroke-width: 1.5; }
+  .arch-box.done { stroke: var(--accent); }
+  .arch-label { font-family: "IBM Plex Mono"; font-size: 13px; fill: var(--ink); }
+  .arch-sub { font-family: "IBM Plex Mono"; font-size: 10.5px; fill: var(--ink-muted); }
+  .arch-arrow { stroke: var(--ink-secondary); stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+  .arch-arrow-dashed { stroke: var(--ink-muted); stroke-width: 1.3; stroke-dasharray: 3 3; fill: none; marker-end: url(#arrow); }
+  .arch-edge-label { font-family: "IBM Plex Mono"; font-size: 11px; fill: var(--ink-muted); }
+  .arch-row-label { font-family: "IBM Plex Mono"; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; fill: var(--ink-muted); }
+
+  /* ---------- decisions ---------- */
+  .decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2px; background: var(--rule); border: 1.5px solid var(--rule); border-radius: 6px; overflow: hidden; }
+  .decision { background: var(--paper-raised); padding: 26px 24px; }
+  .decision h3 { font-size: 18px; margin-bottom: 10px; }
+  .decision p { color: var(--ink-secondary); font-size: 14.5px; margin: 0 0 14px; }
+  .decision a { font-family: "IBM Plex Mono"; font-size: 12.5px; text-decoration: none; }
+  .decision a::after { content: " →"; }
+
+  /* ---------- tools table ---------- */
+  .tools-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  .tools-table th { text-align: left; font-family: "IBM Plex Mono"; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-muted); font-weight: 500; padding: 0 0 10px; border-bottom: 1.5px solid var(--rule-strong); }
+  .tools-table td { padding: 14px 16px 14px 0; border-bottom: 1px solid var(--rule); color: var(--ink-secondary); vertical-align: top; }
+  .tools-table tr:last-child td { border-bottom: none; }
+  .tools-table td:first-child { font-family: "IBM Plex Mono"; font-size: 13.5px; color: var(--ink); white-space: nowrap; }
+
+  /* ---------- stack ---------- */
+  .stack-list { display: flex; flex-wrap: wrap; gap: 10px; }
+  .stack-item {
+    font-family: "IBM Plex Mono"; font-size: 12.5px; padding: 7px 12px;
+    border: 1px solid var(--rule-strong); border-radius: 20px; color: var(--ink-secondary);
+  }
+
+  /* ---------- footer ---------- */
+  footer { padding: 48px 0 60px; }
+  footer .wrap { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+  footer .sig { font-family: "Fraunces"; font-size: 20px; }
+  footer .meta { font-family: "IBM Plex Mono"; font-size: 12.5px; color: var(--ink-muted); margin-top: 6px; }
+  footer .links { display: flex; gap: 18px; font-family: "IBM Plex Mono"; font-size: 13px; }
+  footer a { color: var(--ink-secondary); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  @media (max-width: 640px) {
+    .hero { padding: 52px 0 44px; }
+    section { padding: 48px 0; }
+  }
+</style>
+</head>
+<body>
+
+  <header class="masthead">
+    <div class="wrap">
+      <div class="brand">
+        <span class="brand-mark">{}</span>
+        <span class="brand-name">codebase-rag-mcp</span>
+      </div>
+      <nav>
+        <a href="#proof">The proof</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#decisions">Decisions</a>
+        <a href="https://github.com/leon-lourenco/codebase-rag-mcp">Source</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Engineering case study</p>
+      <h1>Five repos. One index.<br />No copy-pasted files.</h1>
+      <p class="dek">A repo-agnostic RAG server over the Model Context Protocol: point it at
+        any Java codebase, it indexes the code with a real AST parser, and an MCP client gets
+        five read-only tools to search and browse it — never a server-side LLM call, never a
+        hard-coded assumption about how any one repo is laid out.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/leon-lourenco/codebase-rag-mcp">View source on GitHub</a>
+        <a class="btn btn-secondary" href="https://github.com/leon-lourenco/codebase-rag-mcp#readme">Read the README</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="proof">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>The proof</h2>
+        <span class="section-tag">real stdio JSON-RPC, captured stdout</span>
+      </div>
+      <p class="proof-intro">The MCP stdio transport reserves stdout exclusively for JSON-RPC
+        messages. The first live test — piping a real <code>initialize</code> →
+        <code>tools/list</code> → <code>tools/call</code> sequence into a running process and
+        capturing stdout — caught a real bug before any actual client had the chance to.</p>
+
+      <div class="compare">
+        <div class="panel">
+          <div class="panel-head bad">Before the fix — corrupted stream</div>
+          <pre><span class="flag">  .   ____          _            __ _ _</span>
+<span class="flag"> /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \</span>
+<span class="flag">:: Spring Boot ::                (v4.1.0)</span>
+
+<span class="flag">2026-08-19T15:05:58 INFO ... Starting CodebaseRagMcpApplication</span>
+<span class="flag">2026-08-19T15:06:02 INFO ... Registered tools: 5</span>
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion"...
+
+<span class="flag">↑ banner + log lines on the same stream as the JSON-RPC
+  response. A real client's line-by-line parser chokes here.</span></pre>
+        </div>
+        <div class="panel">
+          <div class="panel-head good">After the fix — clean stream</div>
+          <pre>{"jsonrpc":"2.0","id":1,"result":{"protocolVersion"...
+{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":...
+{"jsonrpc":"2.0","id":3,"result":{"content":[{"type"...
+{"jsonrpc":"2.0","id":4,"result":{"content":[{"type"...
+{"jsonrpc":"2.0","id":5,"result":{"content":[{"type"...
+{"jsonrpc":"2.0","id":6,"result":{"content":[{"type"...
+
+<span class="ok">↑ six lines in, six valid JSON-RPC responses out.
+  Nothing else on the stream.</span></pre>
+        </div>
+      </div>
+
+      <p class="cross-check">The fix: <a href="https://github.com/leon-lourenco/codebase-rag-mcp/blob/master/src/main/resources/logback-spring.xml"><code class="mono">logback-spring.xml</code></a>
+        routes every log appender to stderr instead of the default stdout console appender, plus
+        <code class="mono">spring.main.banner-mode: off</code>. Verified by grepping the
+        captured output for anything that wasn't valid JSON, not by eyeballing it.</p>
+
+      <table class="evidence-table">
+        <thead><tr><th>Indexed repo</th><th>Files</th><th>Chunks</th></tr></thead>
+        <tbody>
+          <tr><td>data-structures-project</td><td>481</td><td>1,446</td></tr>
+          <tr><td>design-patterns-project</td><td>222</td><td>560</td></tr>
+          <tr><td>algorithms-project</td><td>136</td><td>598</td></tr>
+          <tr><td>pix-payment-gateway</td><td>32</td><td>92</td></tr>
+          <tr><td>codebase-rag-mcp (itself)</td><td>10</td><td>10</td></tr>
+          <tr class="total"><td>Total</td><td>881</td><td>2,706</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>How it works</h2>
+        <span class="section-tag">one jar, two entry points</span>
+      </div>
+      <div class="diagram-wrap">
+        <svg viewBox="0 0 900 300" role="img" aria-label="Architecture diagram: indexing flow walks a repo, chunks it, embeds via Ollama, and writes to pgvector; query flow has an MCP client call RagTools, which reads from the same pgvector store">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="var(--ink-secondary)"></path>
+            </marker>
+          </defs>
+
+          <text class="arch-row-label" x="20" y="24">indexing — one-shot --index run</text>
+          <rect class="arch-box" x="20" y="34" width="110" height="50" rx="4"></rect>
+          <text class="arch-label" x="75" y="64" text-anchor="middle">any repo</text>
+
+          <rect class="arch-box done" x="180" y="34" width="130" height="50" rx="4"></rect>
+          <text class="arch-label" x="245" y="58" text-anchor="middle">RepoWalker</text>
+          <text class="arch-sub" x="245" y="74" text-anchor="middle">skip build/VCS dirs</text>
+
+          <rect class="arch-box done" x="360" y="34" width="150" height="50" rx="4"></rect>
+          <text class="arch-label" x="435" y="58" text-anchor="middle">chunkers</text>
+          <text class="arch-sub" x="435" y="74" text-anchor="middle">JavaParser / headings</text>
+
+          <rect class="arch-box done" x="560" y="34" width="150" height="50" rx="4"></rect>
+          <text class="arch-label" x="635" y="58" text-anchor="middle">Ollama</text>
+          <text class="arch-sub" x="635" y="74" text-anchor="middle">nomic-embed-text</text>
+
+          <path class="arch-arrow" d="M130,59 H180"></path>
+          <path class="arch-arrow" d="M310,59 H360"></path>
+          <path class="arch-arrow" d="M510,59 H560"></path>
+
+          <text class="arch-row-label" x="20" y="164">querying — MCP server over stdio</text>
+          <rect class="arch-box" x="20" y="174" width="170" height="50" rx="4"></rect>
+          <text class="arch-label" x="105" y="198" text-anchor="middle">MCP client</text>
+          <text class="arch-sub" x="105" y="214" text-anchor="middle">Claude Code / Desktop</text>
+
+          <rect class="arch-box done" x="360" y="174" width="150" height="50" rx="4"></rect>
+          <text class="arch-label" x="435" y="198" text-anchor="middle">RagTools</text>
+          <text class="arch-sub" x="435" y="214" text-anchor="middle">5 tools, no LLM calls</text>
+
+          <path class="arch-arrow" d="M190,192 H360"></path>
+          <path class="arch-arrow" d="M360,206 H190" transform="translate(0,-8)"></path>
+          <text class="arch-edge-label" x="275" y="186">JSON-RPC / stdio</text>
+
+          <rect class="arch-box done" x="360" y="260" width="260" height="34" rx="4"></rect>
+          <text class="arch-label" x="490" y="282" text-anchor="middle">Postgres + pgvector</text>
+
+          <path class="arch-arrow-dashed" d="M635,84 V260"></path>
+          <path class="arch-arrow-dashed" d="M460,224 V260"></path>
+          <text class="arch-edge-label" x="655" y="180" text-anchor="middle">embed + store</text>
+          <text class="arch-edge-label" x="380" y="248">search</text>
+        </svg>
+      </div>
+      <p style="color:var(--ink-secondary); max-width:62ch; margin-top:24px;">The same jar
+        serves both jobs. Run with <code>--index &lt;path&gt; &lt;name&gt;</code>, the
+        <code>CommandLineRunner</code> does a one-shot walk-chunk-embed-store and exits; run
+        with no arguments, that runner returns immediately and the app starts as an MCP server
+        instead.</p>
+    </div>
+  </section>
+
+  <section id="decisions">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Three decisions, not defaults</h2>
+      </div>
+      <div class="decisions">
+        <div class="decision">
+          <h3>Chunk by file type, not by convention</h3>
+          <p>Hard-coding each portfolio repo's folder layout would break the moment a new repo
+            had a different shape — and defeat the point of building one tool for all of them.
+            Each file is handed to whichever chunker claims its extension; Java is parsed with a
+            real AST, not brace-counting, so nested classes and braces in strings don't break it.</p>
+          <a href="https://github.com/leon-lourenco/codebase-rag-mcp/blob/master/src/main/java/com/coderag/indexing/JavaClassChunker.java">JavaClassChunker.java</a>
+        </div>
+        <div class="decision">
+          <h3>Retrieval only, never the model</h3>
+          <p>It would have been easy to make a tool synthesize prose server-side. That's the
+            wrong shape for MCP — the client already has a model in the loop. Every tool
+            returns raw matched chunks and scores; the calling LLM decides what to do with them.</p>
+          <a href="https://github.com/leon-lourenco/codebase-rag-mcp/blob/master/src/main/java/com/coderag/tools/RagTools.java">RagTools.java</a>
+        </div>
+        <div class="decision">
+          <h3>stdout is reserved — verify, don't assume</h3>
+          <p>The framework doesn't know stdout is sacred under stdio transport by default. A
+            live wire-level test with real captured output caught Spring Boot's own banner and
+            logs leaking into the JSON-RPC stream, before any real client had to find out the
+            hard way.</p>
+          <a href="https://github.com/leon-lourenco/codebase-rag-mcp/blob/master/src/main/resources/logback-spring.xml">logback-spring.xml</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <h2>The five tools</h2>
+      </div>
+      <table class="tools-table">
+        <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td>list_indexed_repos</td><td>Every indexed repo with file and chunk counts — the discovery entry point.</td></tr>
+          <tr><td>search_code</td><td>Semantic search over indexed chunks, optionally scoped to one repo.</td></tr>
+          <tr><td>get_file</td><td>Every indexed chunk for one file, by repo + path.</td></tr>
+          <tr><td>list_structures</td><td>Every indexed symbol — class, interface, enum, record, or markdown heading — optionally scoped to one repo.</td></tr>
+          <tr><td>explain_concept</td><td>Exact symbol match plus related semantic search results for a named concept — evidence for the caller to build an explanation from.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Stack</h2>
+      </div>
+      <div class="stack-list">
+        <span class="stack-item">Java 21</span>
+        <span class="stack-item">Spring Boot 4.1</span>
+        <span class="stack-item">Spring AI 2.0</span>
+        <span class="stack-item">Model Context Protocol</span>
+        <span class="stack-item">JavaParser</span>
+        <span class="stack-item">PostgreSQL + pgvector</span>
+        <span class="stack-item">Ollama</span>
+        <span class="stack-item">Testcontainers</span>
+        <span class="stack-item">JUnit 5</span>
+        <span class="stack-item">Docker Compose</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <div>
+        <p class="sig">Leonardo Lourenço Gomes</p>
+        <p class="meta">Senior backend engineer · runs entirely local via <code>docker compose up</code>, no hosted demo, no API key required to use the server</p>
+      </div>
+      <div class="links">
+        <a href="https://github.com/leon-lourenco">GitHub</a>
+        <a href="https://www.linkedin.com/in/leonardo-lourenço-gomes">LinkedIn</a>
+        <a href="https://github.com/leon-lourenco/codebase-rag-mcp">This repo</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

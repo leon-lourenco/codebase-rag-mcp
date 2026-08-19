@@ -16,6 +16,8 @@ concurrency:
 permissions:
   contents: read
   security-events: write
+  pages: write
+  id-token: write
 
 jobs:
   build-test:
@@ -25,3 +27,13 @@ jobs:
     uses: leon-lourenco/ci-templates/.github/workflows/codeql-java.yml@master
     with:
       build-tool: maven
+
+  # Publishes docs/index.html whenever master itself is what ran (a real push, or a manual
+  # re-run) - never on a pull request, since a PR's ref isn't refs/heads/master and a PR from a
+  # fork couldn't deploy anyway.
+  pages:
+    needs: [build-test]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    uses: leon-lourenco/ci-templates/.github/workflows/pages-static.yml@master
+    with:
+      docs-path: docs
