@@ -1,4 +1,7 @@
 spring:
+  main:
+    banner-mode: off
+
   application:
     name: codebase-rag-mcp
 
