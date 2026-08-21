@@ -19,7 +19,7 @@ hour.
 ## Status
 
 - [x] **Indexer**: file-type-based chunking (JavaParser AST for `.java`, heading sections for
-      `.md`), embeddings via Ollama, storage in pgvector.
+      `.md`), embeddings via Ollama, storage in pgvector db.
 - [x] **Five MCP tools**: `list_indexed_repos`, `search_code`, `get_file`, `list_structures`,
       `explain_concept` — pure retrieval, no server-side LLM calls.
 - [x] **Verified over the real MCP wire protocol** — initialize, `tools/list`, and `tools/call`
