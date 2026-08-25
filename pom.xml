@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>com.coderag</groupId>
 	<artifactId>codebase-rag-mcp</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0.0-SNAPSHOT</version>
 	<name>codebase-rag-mcp</name>
 	<description/>
 	<url/>
@@ -126,6 +126,11 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>versions-maven-plugin</artifactId>
+				<version>2.21.0</version>
 			</plugin>
 		</plugins>
 	</build>
